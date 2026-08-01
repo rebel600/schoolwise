@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+
+# Fast gates only. Anything slower belongs in CI — a pre-commit hook that
+# takes a minute is a hook developers bypass with --no-verify.
+
+bunx --bun prettier --check . || {
+  echo ""
+  echo "Formatting check failed. Fix with: bun run format"
+  exit 1
+}
+
+bun run lint

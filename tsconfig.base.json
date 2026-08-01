@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    /* Emit — every package is bundled by Vite, so tsc only typechecks */
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "useDefineForClassFields": true,
+
+    /* Strictness — non-negotiable per docs/04-development-guidelines.md */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Unused code is caught by ESLint, which can autofix and allow
+       intentional `_`-prefixed exceptions. tsc cannot do either. */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+
+    /* jest-dom augments Vitest's Assertion interface. The augmentation lives
+       in the root setup file, which is outside each package's `include`, so
+       it must be registered here or `toBeInTheDocument` is untyped. */
+    "types": ["vite/client", "@testing-library/jest-dom/vitest"],
+
+    "skipLibCheck": true
+  }
+}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>School Management System</title>
+
+    <!-- Import Maps defining application runtimes locations -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.2.0",
+          "react-dom": "https://esm.sh/react-dom@18.2.0",
+          "single-spa": "https://esm.sh/single-spa@5.9.4",
+          "@school-wise/root-config": "http://localhost:9000/src/main.ts",
+          "@school-wise/styleguide": "http://localhost:4001/src/school-wise-styleguide.tsx",
+          "@school-wise/app-auth": "http://localhost:4002/src/school-wise-app-auth.tsx"
+        }
+      }
+    </script>
+    <!--
+      React Fast Refresh preamble.
+
+      The shell itself has no React plugin, so it must install the global
+      refresh hook on behalf of every micro frontend it loads. The hook is
+      global and only needs to be installed once, from any running Vite dev
+      server that has @vitejs/plugin-react enabled.
+
+      Each candidate is tried in order so the shell still boots when an
+      individual micro frontend's dev server is not running.
+    -->
+    <script type="module">
+      // Dev only. In a production build there is no Vite dev server to ask.
+      if (import.meta.env?.DEV) {
+        const refreshHosts = [
+          "http://localhost:4001", // styleguide
+          "http://localhost:4002", // app-auth
+        ];
+
+        // Sequential fallback without top-level await — the build target
+        // does not support it, and this must not block module evaluation.
+        refreshHosts
+          .reduce(
+            (chain, host) =>
+              chain.then(
+                (installed) =>
+                  installed ||
+                  import(/* @vite-ignore */ `${host}/@react-refresh`)
+                    .then((RefreshRuntime) => {
+                      RefreshRuntime.injectIntoGlobalHook(window);
+                      window.$RefreshReg$ = () => {};
+                      window.$RefreshSig$ = () => () => {};
+                      window.__vite_plugin_react_preamble_installed__ = true;
+                      return true;
+                    })
+                    .catch(() => false), // dev server down — try the next
+              ),
+            Promise.resolve(false),
+          )
+          .then((installed) => {
+            if (!installed) {
+              console.warn(
+                "[shell] React Fast Refresh unavailable — no micro frontend dev server responded. HMR is disabled.",
+              );
+            }
+          });
+      }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/import-map-overrides@3.0.0/dist/import-map-overrides.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

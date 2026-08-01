@@ -1,0 +1,39 @@
+{
+  "name": "@school-wise/styleguide",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "//": "Types resolve from source. At runtime this package is external and loaded via the shell's import map — see docs/adr/0001-single-spa-micro-frontends.md",
+  "types": "./src/school-wise-styleguide.tsx",
+  "exports": {
+    ".": {
+      "types": "./src/school-wise-styleguide.tsx",
+      "default": "./src/school-wise-styleguide.tsx"
+    }
+  },
+  "scripts": {
+    "dev": "vite --port 4001",
+    "dev:css": "tailwindcss -i ./src/global.css -o ./src/tailwind-gen.css --watch",
+    "build": "bun run build:css && vite build",
+    "lint": "eslint src",
+    "typecheck": "bun run build:css && tsc --noEmit",
+    "test": "vitest run",
+    "build:css": "tailwindcss -i ./src/global.css -o ./src/tailwind-gen.css --minify"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "single-spa-react": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0",
+    "vite-plugin-single-spa": "^1.1.1"
+  }
+}
