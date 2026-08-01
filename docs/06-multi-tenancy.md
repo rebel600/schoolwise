@@ -230,9 +230,26 @@ ALTER TABLE students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE students FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation ON students
-  USING      (school_id = current_setting('app.current_school_id')::uuid)
-  WITH CHECK (school_id = current_setting('app.current_school_id')::uuid);
+  USING      (school_id = NULLIF(current_setting('app.current_school_id', true), '')::uuid)
+  WITH CHECK (school_id = NULLIF(current_setting('app.current_school_id', true), '')::uuid);
 ```
+
+## `NULLIF` is load-bearing
+
+Both arguments to `current_setting` matter, and so does the `NULLIF` around it. This exact expression was arrived at by fixing a real bug that integration tests caught:
+
+| Expression                                       | Behaviour with no tenant bound                              |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| `current_setting('app.current_school_id')`       | **Raises** `42704` — the parameter does not exist           |
+| `current_setting('app.current_school_id', true)` | Returns NULL — but only until a transaction has set it once |
+| …after any `SET LOCAL` has run and ended         | Returns `''`, and `''::uuid` **raises** `22P02`             |
+| `NULLIF(current_setting(…, true), '')`           | Returns NULL → matches nothing → **zero rows** ✅           |
+
+The third row is the trap. On a pooled connection, the first request works and every later request that borrows the same connection without binding a tenant gets an _error_ instead of a clean empty result — a failure that never appears in single-request testing.
+
+`NULLIF` maps `''` back to NULL, so `school_id = NULL` evaluates to NULL, which is never true. An absent tenant yields zero rows rather than an error, which is the fail-closed behaviour this layer exists to guarantee.
+
+Verified on PostgreSQL 16 and on PGlite in the test suite.
 
 - `USING` filters reads, updates, and deletes
 - `WITH CHECK` blocks inserts and updates that would write a row into another tenant

@@ -136,11 +136,11 @@ school-wise/
 │   ├── lib-utils/           framework-agnostic helpers      (planned)
 │   ├── lib-hooks/           shared React hooks              (planned)
 │   ├── lib-config/          environment configuration       (planned)
-│   └── backend/             NestJS API                      (planned)
+│   └── backend/             NestJS API — tenant infra built
 ├── docs/
 │   └── adr/                 architecture decision records
 ├── package.json
-└── turbo.json                                               (planned)
+└── turbo.json
 ```
 
 Package role is conveyed by name prefix: `app-*` deploys, `lib-*` is imported, `root-config` composes.
@@ -183,6 +183,24 @@ Open **http://localhost:9000**. `/` redirects to `/login`.
 5. Register it in `packages/root-config/src/main.ts` with an **allow-list** of owned routes
 
 Step 3 is not optional — omitting it produces a second React instance and hooks break at runtime with no build error.
+
+## Backend
+
+```bash
+docker compose up -d                    # PostgreSQL 16 on :5432
+cp .env.example .env                    # then fill DATABASE_URL and JWT_ACCESS_SECRET
+
+cd packages/backend
+bun run db:generate                     # schema change → SQL migration
+bun run db:migrate                      # apply, as the schema OWNER
+bun run dev                             # http://localhost:3000/api/v1/health
+```
+
+Swagger is served at `/api/docs` outside production.
+
+> **Two database roles, deliberately.** Migrations run as `schoolwise_owner`; the application connects as `schoolwise_app`, which owns no tables and has neither `BYPASSRLS` nor superuser. Running the app as the owner silently disables Row-Level Security — layer 3 of tenant isolation. See [docs/06-multi-tenancy.md](docs/06-multi-tenancy.md).
+
+Backend tests need no Docker: they run against PGlite, a real PostgreSQL compiled to WASM, so tenant isolation is verified on every commit rather than skipped when infrastructure is absent.
 
 ---
 

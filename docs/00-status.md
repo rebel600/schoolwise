@@ -52,11 +52,51 @@ Update this file in the same pull request that changes implementation status. A 
 
 # Backend
 
-| Component  | Status                                          |
-| ---------- | ----------------------------------------------- |
-| Everything | **Planned** — `packages/backend` does not exist |
+| Component               | Status      | Notes                                                               |
+| ----------------------- | ----------- | ------------------------------------------------------------------- |
+| NestJS application      | **Built**   | Boots, versioned `/api/v1`, Swagger at `/api/docs`                  |
+| Config                  | **Built**   | Zod-validated env, fails fast at startup with actionable errors     |
+| Drizzle + PostgreSQL    | **Built**   | `postgres-js`, `prepare: false` for tenant-scoped transactions      |
+| Schema                  | **Partial** | `schools`, `users`, `school_memberships`, `students`                |
+| Migrations              | **Built**   | `0000_initial_tenant_schema.sql`, applied to PostgreSQL 16          |
+| **Tenant isolation**    | **Built**   | All three layers, **verified** — see below                          |
+| Global exception filter | **Built**   | Standard envelope; stacks logged, never returned                    |
+| Zod validation pipe     | **Built**   | Validates and strips unknown keys                                   |
+| Health endpoint         | **Built**   | `GET /api/v1/health`, checks the database                           |
+| Auth module             | **Planned** | Next phase — [ADR-0005](adr/0005-self-hosted-jwt-authentication.md) |
+| RBAC guards             | **Planned** |                                                                     |
+| Business modules        | **Planned** | Attendance, assignments, timetable, results, …                      |
 
-No NestJS application, database, schema, migration, or endpoint has been created. All backend documentation is specification.
+## Tenant isolation — verified, not assumed
+
+The three layers of [06-multi-tenancy.md](06-multi-tenancy.md) are implemented and covered by 18 passing tests. Tests run against **real PostgreSQL** via PGlite (Postgres compiled to WASM), so they need no Docker daemon and run on every commit — an isolation test that gets skipped when infrastructure is missing reports green while proving nothing.
+
+| Check                                                       | Result                 |
+| ----------------------------------------------------------- | ---------------------- |
+| Unscoped `SELECT` returns only the bound tenant's rows      | ✅                     |
+| Another tenant's row is invisible even by primary key       | ✅ empty, not an error |
+| No tenant bound → zero rows, not every row                  | ✅                     |
+| Cross-tenant `INSERT` blocked by `WITH CHECK`               | ✅                     |
+| `UPDATE` cannot move a row into another tenant              | ✅                     |
+| `DELETE` cannot reach another tenant's rows                 | ✅                     |
+| Tenant setting does not survive its transaction             | ✅                     |
+| Same admission number allowed in two schools                | ✅                     |
+| Duplicate admission number rejected within one school       | ✅                     |
+| Every tenant table has an RLS policy                        | ✅                     |
+| `FORCE ROW LEVEL SECURITY` set, so the owner cannot bypass  | ✅                     |
+| `schools` / `users` correctly excluded from tenant policies | ✅                     |
+| `TenantContext` fails closed when unbound                   | ✅                     |
+| `TenantContext` refuses to rebind mid-request               | ✅                     |
+
+Also confirmed manually against **PostgreSQL 16** in Docker, connecting as the non-owning `schoolwise_app` role: identical results.
+
+> **A real bug was found here.** The first RLS policy used `current_setting(..., true)::uuid`. That returns NULL only until a transaction has set the variable once — afterwards the session value is the **empty string**, and `''::uuid` raises `22P02` instead of matching nothing. On a pooled connection the second request would error rather than return an empty result. Fixed with `NULLIF(..., '')`, and both the migration and the spec now carry the explanation.
+
+## Not yet done on the backend
+
+- **No authentication.** `TenantMiddleware` reads `req.user.schoolId`, which nothing populates yet. Every route is effectively unauthenticated, and `TenantContext` therefore stays unbound and throws on any repository access — fail-closed, but not usable until the auth module lands.
+- **No concrete repository yet.** `TenantRepository` is written and typed but has no subclass; `students` has no service or controller.
+- **`grantsSql()` in `src/database/rls.ts` is unused** — role creation is currently manual (`docker-compose.yml` comments) and in the test harness. Wire it into a migration when provisioning is automated.
 
 ---
 
@@ -111,15 +151,17 @@ The first attempt at this **passed when it should have failed**: without `eslint
 Ordered by dependency, not by visible progress:
 
 1. Push to a remote, enable branch protection on `main`, confirm CI actually runs
-2. `packages/backend` — NestJS, Drizzle, PostgreSQL, config, logging, Swagger
-3. Tenant infrastructure — context, middleware, `TenantRepository`, RLS ([ADR-0004](adr/0004-multi-tenancy-in-v1.md))
-4. Tenant-aware schema, first migration, cross-tenant isolation tests
-5. Auth module — login, refresh with rotation and reuse detection, sessions, RBAC guards
+2. Auth module — Argon2id, login, refresh with rotation and reuse detection, sessions ([ADR-0005](adr/0005-self-hosted-jwt-authentication.md))
+3. `JwtAuthGuard` populating `req.user`, so `TenantMiddleware` can bind — global guards with explicit `@Public()` opt-out
+4. RBAC — `RolesGuard`, `PermissionsGuard`, scoped to school membership
+5. First concrete `TenantRepository` subclass plus a students module, as the reference implementation
 6. `lib-api-client` and `lib-types`
-7. Real auth application, replacing the placeholder store
+7. Real auth application, replacing the `localStorage` placeholder store
 8. Shell — layout, navigation, auth guard, workspace switcher, error boundary
 
-Step 1 is minutes of work and is the only thing standing between the CI pipeline and being real. Steps 3 and 4 come before any business table exists — retrofitting tenancy afterwards is the failure mode [ADR-0004](adr/0004-multi-tenancy-in-v1.md) exists to prevent.
+Step 1 is minutes of work and is the only thing standing between the CI pipeline and being real.
+
+Step 3 is what makes the tenant infrastructure reachable: everything below layer 1 is built and tested, but nothing populates `req.user` yet, so no request can currently bind a tenant.
 
 ---
 

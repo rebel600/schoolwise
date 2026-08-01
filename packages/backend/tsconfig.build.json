@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    /*
+     * tsconfig.base.json sets noEmit for typechecking, which is right for the
+     * Vite-bundled frontend packages. The backend is compiled by tsc via
+     * `nest build`, so emit must be re-enabled here — otherwise the build
+     * "succeeds" and produces no JavaScript at all.
+     */
+    "noEmit": false,
+    "outDir": "./dist",
+    "declaration": false,
+    "sourceMap": true,
+
+    /* Requires noEmit; incompatible with an emitting build. */
+    "allowImportingTsExtensions": false
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "src/testing/**",
+    "drizzle.config.ts",
+    "vitest.config.ts"
+  ]
+}

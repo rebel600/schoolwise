@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: schoolwise-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: schoolwise_owner
+      POSTGRES_PASSWORD: schoolwise_dev_password
+      POSTGRES_DB: schoolwise
+    ports:
+      - "5432:5432"
+    volumes:
+      - schoolwise-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schoolwise_owner -d schoolwise"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  schoolwise-pgdata:
+# The container user is schoolwise_owner — the SCHEMA OWNER, used for
+# migrations only. The application connects as schoolwise_app, a non-owning
+# role without BYPASSRLS, so Row-Level Security actually applies to it.
+#
+# Running the app as the owner would silently disable layer 3 of tenant
+# isolation. See docs/06-multi-tenancy.md.
