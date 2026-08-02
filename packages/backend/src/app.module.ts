@@ -1,14 +1,12 @@
-import {
-  Module,
-  type MiddlewareConsumer,
-  type NestModule,
-} from "@nestjs/common";
+import { Module, Scope } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { APP_INTERCEPTOR } from "@nestjs/core";
 
+import { AuthModule } from "./auth/auth.module";
 import { validateEnv } from "./config/env";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
-import { TenantMiddleware } from "./tenancy/tenant.middleware";
+import { TenantInterceptor } from "./tenancy/tenant.interceptor";
 import { TenancyModule } from "./tenancy/tenant.module";
 
 @Module({
@@ -21,16 +19,28 @@ import { TenancyModule } from "./tenancy/tenant.module";
     }),
     DatabaseModule,
     TenancyModule,
+    AuthModule,
     HealthModule,
   ],
-})
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
+  providers: [
     /*
-     * Applied to every route. The middleware leaves unauthenticated requests
-     * unbound, and TenantContext fails closed, so a route that skips
-     * authentication cannot accidentally query across tenants.
+     * An INTERCEPTOR, not middleware. NestJS runs middleware BEFORE guards,
+     * so a middleware could never see the `req.user` that JwtAuthGuard
+     * populates, and every request would be left unbound.
+     *
+     * See src/tenancy/tenant.interceptor.ts.
      */
-    consumer.apply(TenantMiddleware).forRoutes("*");
-  }
-}
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantInterceptor,
+      /*
+       * Explicit REQUEST scope. It injects the request-scoped TenantContext,
+       * and without this Nest instantiates the interceptor as a singleton at
+       * bootstrap with no dependencies injected — `this.tenant` is then
+       * undefined and every authenticated request 500s.
+       */
+      scope: Scope.REQUEST,
+    },
+  ],
+})
+export class AppModule {}

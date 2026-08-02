@@ -52,20 +52,22 @@ Update this file in the same pull request that changes implementation status. A 
 
 # Backend
 
-| Component               | Status      | Notes                                                               |
-| ----------------------- | ----------- | ------------------------------------------------------------------- |
-| NestJS application      | **Built**   | Boots, versioned `/api/v1`, Swagger at `/api/docs`                  |
-| Config                  | **Built**   | Zod-validated env, fails fast at startup with actionable errors     |
-| Drizzle + PostgreSQL    | **Built**   | `postgres-js`, `prepare: false` for tenant-scoped transactions      |
-| Schema                  | **Partial** | `schools`, `users`, `school_memberships`, `students`                |
-| Migrations              | **Built**   | `0000_initial_tenant_schema.sql`, applied to PostgreSQL 16          |
-| **Tenant isolation**    | **Built**   | All three layers, **verified** — see below                          |
-| Global exception filter | **Built**   | Standard envelope; stacks logged, never returned                    |
-| Zod validation pipe     | **Built**   | Validates and strips unknown keys                                   |
-| Health endpoint         | **Built**   | `GET /api/v1/health`, checks the database                           |
-| Auth module             | **Planned** | Next phase — [ADR-0005](adr/0005-self-hosted-jwt-authentication.md) |
-| RBAC guards             | **Planned** |                                                                     |
-| Business modules        | **Planned** | Attendance, assignments, timetable, results, …                      |
+| Component               | Status      | Notes                                                                              |
+| ----------------------- | ----------- | ---------------------------------------------------------------------------------- |
+| NestJS application      | **Built**   | Boots, versioned `/api/v1`, Swagger at `/api/docs`                                 |
+| Config                  | **Built**   | Zod-validated env, fails fast at startup with actionable errors                    |
+| Drizzle + PostgreSQL    | **Built**   | `postgres-js`, `prepare: false` for tenant-scoped transactions                     |
+| Schema                  | **Partial** | `schools`, `users`, `school_memberships`, `students`, `sessions`, `refresh_tokens` |
+| Migrations              | **Built**   | 3 migrations, applied to PostgreSQL 16                                             |
+| **Tenant isolation**    | **Built**   | All three layers, **verified** — see below                                         |
+| **Auth module**         | **Built**   | Login, refresh with rotation + reuse detection, logout, `/auth/me`                 |
+| Password hashing        | **Built**   | Argon2id, OWASP parameters                                                         |
+| Guards                  | **Built**   | `JwtAuthGuard` + `RolesGuard`, GLOBAL with `@Public()` opt-out                     |
+| Global exception filter | **Built**   | Standard envelope; stacks logged, never returned                                   |
+| Zod validation pipe     | **Built**   | Validates and strips unknown keys                                                  |
+| Health endpoint         | **Built**   | `GET /api/v1/health`, checks the database                                          |
+| Seed script             | **Built**   | `db:seed` — creates TWO schools, so isolation bugs are visible                     |
+| Business modules        | **Planned** | Attendance, assignments, timetable, results, …                                     |
 
 ## Tenant isolation — verified, not assumed
 
@@ -92,11 +94,42 @@ Also confirmed manually against **PostgreSQL 16** in Docker, connecting as the n
 
 > **A real bug was found here.** The first RLS policy used `current_setting(..., true)::uuid`. That returns NULL only until a transaction has set the variable once — afterwards the session value is the **empty string**, and `''::uuid` raises `22P02` instead of matching nothing. On a pooled connection the second request would error rather than return an empty result. Fixed with `NULLIF(..., '')`, and both the migration and the spec now carry the explanation.
 
+## Auth — verified end to end
+
+16 service tests, plus a full HTTP run against PostgreSQL 16.
+
+| Check                                                             | Result                                     |
+| ----------------------------------------------------------------- | ------------------------------------------ |
+| Protected route without a token                                   | 401                                        |
+| Wrong password vs unknown email                                   | identical message — no account enumeration |
+| Suspended account refused                                         | ✅                                         |
+| Refresh token stored hashed, never plaintext                      | ✅                                         |
+| `accessToken` in body; refresh token only in an `httpOnly` cookie | ✅                                         |
+| Refresh rotates the token                                         | ✅                                         |
+| **Replaying a used token revokes the whole session family**       | ✅                                         |
+| Refresh after logout rejected                                     | ✅                                         |
+| Refresh after suspension rejected                                 | ✅                                         |
+| Tampered token rejected                                           | 401                                        |
+| Tenant bound from the token matches the user's school             | ✅                                         |
+| Login and refresh work **as the app role, with RLS in force**     | ✅                                         |
+
+> **Two design bugs were found here, both by end-to-end testing rather than unit tests.**
+>
+> **1. RLS on `school_memberships` broke login entirely.** Login must read memberships to _discover_ which school to bind — before any tenant exists. The policy matched zero rows, so every login failed with "Invalid email or password." Memberships are now a documented global table (migration `0002`), with layer-2 scoping mandatory for administrative access.
+>
+> The unit tests all passed, because they ran as the PGlite **superuser**, which bypasses RLS. A regression test now exercises login as the non-owning application role.
+>
+> **2. `APP_INTERCEPTOR` did not get its dependencies injected.** `TenantInterceptor` injects the request-scoped `TenantContext`; without an explicit `scope: Scope.REQUEST`, Nest built it as a bootstrap singleton with `this.tenant` undefined, and every authenticated request 500'd.
+>
+> Also corrected: tenant binding was originally a **middleware**, which cannot work — NestJS runs middleware _before_ guards, so `req.user` did not exist yet. It is now an interceptor.
+
 ## Not yet done on the backend
 
-- **No authentication.** `TenantMiddleware` reads `req.user.schoolId`, which nothing populates yet. Every route is effectively unauthenticated, and `TenantContext` therefore stays unbound and throws on any repository access — fail-closed, but not usable until the auth module lands.
-- **No concrete repository yet.** `TenantRepository` is written and typed but has no subclass; `students` has no service or controller.
-- **`grantsSql()` in `src/database/rls.ts` is unused** — role creation is currently manual (`docker-compose.yml` comments) and in the test harness. Wire it into a migration when provisioning is automated.
+- **No rate limiting** on login, refresh, or password reset. ADR-0005 requires it before production.
+- **No password reset flow.** MFA and SSO remain deferred by ADR-0005.
+- **Permissions are empty.** `PermissionsGuard` is unwritten; tokens carry `permissions: []` and only role checks are enforced.
+- **No concrete repository yet.** `TenantRepository` is written, typed, and tested but has no subclass; `students` has no service or controller.
+- **`grantsSql()` in `src/database/rls.ts` is unused** — role creation is currently manual (`docker-compose.yml`) and in the test harness. Wire it into a migration when provisioning is automated.
 
 ---
 
@@ -150,18 +183,16 @@ The first attempt at this **passed when it should have failed**: without `eslint
 
 Ordered by dependency, not by visible progress:
 
-1. Push to a remote, enable branch protection on `main`, confirm CI actually runs
-2. Auth module — Argon2id, login, refresh with rotation and reuse detection, sessions ([ADR-0005](adr/0005-self-hosted-jwt-authentication.md))
-3. `JwtAuthGuard` populating `req.user`, so `TenantMiddleware` can bind — global guards with explicit `@Public()` opt-out
-4. RBAC — `RolesGuard`, `PermissionsGuard`, scoped to school membership
+1. Enable branch protection on `main` and confirm CI actually runs on a PR
+2. Rate limiting on login, refresh, and password reset
+3. Password reset flow
+4. `PermissionsGuard` and a real permission model
 5. First concrete `TenantRepository` subclass plus a students module, as the reference implementation
 6. `lib-api-client` and `lib-types`
 7. Real auth application, replacing the `localStorage` placeholder store
 8. Shell — layout, navigation, auth guard, workspace switcher, error boundary
 
-Step 1 is minutes of work and is the only thing standing between the CI pipeline and being real.
-
-Step 3 is what makes the tenant infrastructure reachable: everything below layer 1 is built and tested, but nothing populates `req.user` yet, so no request can currently bind a tenant.
+Steps 2 and 3 are the gaps [ADR-0005](adr/0005-self-hosted-jwt-authentication.md) names as prerequisites before this auth module is production-ready. Without rate limiting, the login endpoint is an open brute-force target regardless of how good the hashing is.
 
 ---
 

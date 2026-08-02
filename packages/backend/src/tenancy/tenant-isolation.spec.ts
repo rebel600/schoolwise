@@ -214,9 +214,7 @@ describe("tenant isolation", () => {
     it("has an RLS policy on every tenant table", async () => {
       const covered = await policyTableNames();
 
-      for (const table of ["school_memberships", "students"]) {
-        expect(covered.has(table)).toBe(true);
-      }
+      expect(covered.has("students")).toBe(true);
     });
 
     it("forces RLS so the table owner cannot bypass it", async () => {
@@ -226,10 +224,10 @@ describe("tenant isolation", () => {
         relforcerowsecurity: boolean;
       }>(
         sql`SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
-            WHERE relname IN ('students', 'school_memberships')`,
+            WHERE relname = 'students'`,
       );
 
-      expect(rows).toHaveLength(2);
+      expect(rows).toHaveLength(1);
       for (const row of rows) {
         expect(row.relrowsecurity).toBe(true);
         /* Without FORCE, the table owner bypasses the policy entirely. */
@@ -240,9 +238,21 @@ describe("tenant isolation", () => {
     it("keeps global tables out of the tenant policy set", async () => {
       const covered = await policyTableNames();
 
-      /* schools IS the tenant; users is global identity. */
-      expect(covered.has("schools")).toBe(false);
-      expect(covered.has("users")).toBe(false);
+      /*
+       * These carry school_id but deliberately have NO policy: all are read
+       * BEFORE a tenant context can exist, during login or refresh. A policy
+       * here breaks authentication rather than securing it.
+       * See src/database/schema/index.ts -- GLOBAL_TABLE_NAMES.
+       */
+      for (const table of [
+        "schools",
+        "users",
+        "school_memberships",
+        "sessions",
+        "refresh_tokens",
+      ]) {
+        expect(covered.has(table)).toBe(false);
+      }
     });
   });
 

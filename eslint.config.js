@@ -192,5 +192,11 @@ export default tseslint.config(
     },
   },
 
+  {
+    /* CLI scripts — console output is their interface, not a stray debug log. */
+    files: ["**/database/migrate.ts", "**/database/seed.ts"],
+    rules: { "no-console": "off" },
+  },
+
   prettier,
 );

@@ -8,6 +8,13 @@
       "when": 1785626547862,
       "tag": "0000_initial_tenant_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785628860797,
+      "tag": "0001_sessions_and_refresh_tokens",
+      "breakpoints": true
     }
   ]
 }

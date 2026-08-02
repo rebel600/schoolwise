@@ -2,6 +2,7 @@ import { Controller, Get, Inject } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { sql } from "drizzle-orm";
 
+import { Public } from "../auth/public.decorator";
 import { DATABASE, type Database } from "../database/database.types";
 
 @ApiTags("health")
@@ -9,6 +10,7 @@ import { DATABASE, type Database } from "../database/database.types";
 export class HealthController {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: "Liveness and dependency check" })
   async check(): Promise<{

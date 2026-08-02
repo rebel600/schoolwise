@@ -4,6 +4,7 @@ import { Logger, VersioningType } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import cookieParser from "cookie-parser";
 
 import { AppModule } from "./app.module";
 import { AllExceptionsFilter } from "./common/all-exceptions.filter";
@@ -12,6 +13,9 @@ import type { Env } from "./config/env";
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService<Env, true>);
+
+  /* Required to read the httpOnly refresh cookie. */
+  app.use(cookieParser());
 
   app.useGlobalFilters(new AllExceptionsFilter());
 
