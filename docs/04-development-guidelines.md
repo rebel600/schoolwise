@@ -6,7 +6,7 @@
 
 ---
 
-> **The repository is not yet under version control.** Every rule below about branches, commits, and pull requests is unenforceable until `git init` is run. That is the highest-priority gap — see [00-status.md](00-status.md).
+> The repository is under version control with Husky hooks enforcing formatting, linting, and Conventional Commits. Branch protection on `main` is still outstanding — see [00-status.md](00-status.md).
 
 ---
 
@@ -1072,15 +1072,30 @@ Bun workspaces manage dependencies. Turborepo manages tasks. See [ADR-0002](adr/
 
 The layout is flat under `packages/`, with role conveyed by name prefix:
 
-| Prefix        | Role                      | May be imported by        |
-| ------------- | ------------------------- | ------------------------- |
-| `root-config` | Composes applications     | nothing                   |
-| `app-*`       | Deployable micro frontend | nothing                   |
-| `lib-*`       | Shared library            | apps, other libs, backend |
-| `styleguide`  | Design system             | apps                      |
-| `backend`     | NestJS API                | nothing                   |
+| Prefix        | Role                      | May import            | May be imported by   |
+| ------------- | ------------------------- | --------------------- | -------------------- |
+| `root-config` | Composes applications     | `lib-*`, `styleguide` | nothing              |
+| `app-*`       | Deployable micro frontend | `lib-*`, `styleguide` | nothing              |
+| `lib-*`       | Shared library            | other `lib-*`         | apps, shell, backend |
+| `styleguide`  | Design system             | `lib-*`               | apps, shell          |
+| `backend`     | NestJS API                | `lib-*`               | nothing              |
+
+The shell may import shared libraries — it resolves the session before deciding which application to activate. It must never import an **app**: those are composed at runtime through the import map, and a build-time import would defeat independent deployability.
 
 Do not place reusable code inside application folders.
+
+## Shared runtime singletons
+
+Two packages must exist exactly once at runtime, not once per bundle:
+
+| Package          | Why                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `styleguide`     | One copy of the design tokens and component styles                                                                                                     |
+| `lib-api-client` | Owns the **in-memory access token and session store**. A per-application copy means signing in inside one micro frontend leaves the others signed out. |
+
+Both are declared in the shell's import map and marked `external` in every consumer's Rollup config — alongside `react`, `react-dom`, and `single-spa`. Omitting an `external` entry produces a second instance that fails silently at runtime, with no build error.
+
+This is the Single-SPA tax [ADR-0001](adr/0001-single-spa-micro-frontends.md) records: any state that must be shared across micro frontends has to become a runtime singleton, with its own dev server, import map entry, and externals in every consumer.
 
 Dependency direction is enforced by `eslint-plugin-boundaries`. The rules are covered by a test, because a misconfigured lint rule silently stops enforcing and nothing fails.
 

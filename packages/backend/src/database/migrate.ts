@@ -76,12 +76,10 @@ async function main(): Promise<void> {
         );
       });
 
-      // eslint-disable-next-line no-console
       console.log(`applied ${file}`);
       count += 1;
     }
 
-    // eslint-disable-next-line no-console
     console.log(
       count === 0
         ? "database already up to date"

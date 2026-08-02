@@ -32,3 +32,12 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright
+test-results
+playwright-report
+
+# Claude Code tooling — per-developer, not project code.
+# Remove these lines if the team decides to share skills via the repo.
+.claude/skills
+skills-lock.json

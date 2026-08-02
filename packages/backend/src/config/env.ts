@@ -25,6 +25,16 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: z.string().default("15m"),
   JWT_REFRESH_TTL: z.string().default("30d"),
 
+  /* Mail. Optional in development; SMTP_HOST is required in production. */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASSWORD: z.string().optional(),
+  MAIL_FROM: z.string().default("SchoolWise <no-reply@schoolwise.local>"),
+
+  /* Where reset links point. The frontend origin, not the API origin. */
+  APP_BASE_URL: z.string().url().default("http://localhost:9000"),
+
   CORS_ORIGINS: z
     .string()
     .default("http://localhost:9000")

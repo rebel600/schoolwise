@@ -255,6 +255,25 @@ Verified on PostgreSQL 16 and on PGlite in the test suite.
 - `WITH CHECK` blocks inserts and updates that would write a row into another tenant
 - `FORCE ROW LEVEL SECURITY` applies the policy to the table owner as well — without it, the owning role bypasses the policy entirely and the layer does nothing
 
+## Tables that cannot carry RLS
+
+Some tables hold `school_id` but must **not** have a `tenant_isolation` policy, because they are read **before a tenant context can exist**:
+
+| Table                        | Why no policy                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `schools`                    | It _is_ the tenant. It cannot be scoped by itself.                                                                     |
+| `users`                      | Global identity. Email is globally unique because identity precedes membership.                                        |
+| `school_memberships`         | Answers "which schools does this user belong to?" — the question login must resolve _in order to_ discover the tenant. |
+| `sessions`, `refresh_tokens` | Read during login and refresh, before any tenant is bound.                                                             |
+
+This is not a loophole; it is a consequence of the ordering. A policy on `school_memberships` was tried, and it broke authentication outright: the login lookup ran with no tenant set, matched zero rows, and every login failed with "Invalid email or password." Layer 3 cannot protect a table that must be queried before the tenant is known.
+
+**Layer 2 therefore becomes mandatory for these tables, not optional.** Any _administrative_ access — "list the teachers at my school", "show members of this school" — must go through a repository extending `TenantRepository`. Only the auth module may read them un-scoped, and only by `user_id` or session id.
+
+> A related trap: tests that run as a database superuser bypass RLS entirely, so a policy that breaks the login path passes every unit test and still fails in production. Isolation tests must run as the non-owning application role. See `asAppRole` in `src/testing/test-database.ts`.
+
+---
+
 ## Application database role
 
 The application connects as a role that is **not** the table owner and does **not** have `BYPASSRLS`:

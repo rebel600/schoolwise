@@ -94,6 +94,12 @@ export default tseslint.config(
       /* docs/04-development-guidelines.md: avoid `any`, prefer `unknown`. */
       "@typescript-eslint/no-explicit-any": "error",
 
+      /*
+       * Redundant under TypeScript — prop types are checked at compile time,
+       * and the rule cannot see through `forwardRef` generics anyway.
+       */
+      "react/prop-types": "off",
+
       /* docs/02-frontend.md: no console.log in committed code. */
       "no-console": ["error", { allow: ["warn", "error"] }],
 
@@ -153,10 +159,24 @@ export default tseslint.config(
                 "An app must never import another app's internals. Micro frontends communicate through shared packages (styleguide, lib-*) or the backend API — see docs/01-architecture.md.",
             },
             {
+              /*
+               * The shell needs shared libraries — it resolves the session
+               * before deciding which application to activate. It must still
+               * never import an APP: those are composed at runtime through
+               * the import map, not linked at build time.
+               */
               from: { element: { type: "shell" } },
-              allow: { to: { element: { type: "shell" } } },
+              allow: {
+                to: {
+                  element: { types: { anyOf: ["shell", "lib", "styleguide"] } },
+                },
+              },
+            },
+            {
+              from: { element: { type: "shell" } },
+              disallow: { to: { element: { type: "app" } } },
               message:
-                "The shell composes apps at runtime via the import map. It must not import them at build time.",
+                "The shell composes apps at runtime via the import map. Importing one at build time defeats independent deployability.",
             },
             {
               from: { element: { type: "styleguide" } },
@@ -190,6 +210,12 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "no-console": "off",
     },
+  },
+
+  {
+    /* CLI scripts — console output is their interface, not a stray debug log. */
+    files: ["**/database/migrate.ts", "**/database/seed.ts"],
+    rules: { "no-console": "off" },
   },
 
   prettier,
