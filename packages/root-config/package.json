@@ -15,7 +15,8 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^7.15.1",
     "single-spa": "^5.9.4",
-    "single-spa-react": "^6.0.1"
+    "single-spa-react": "^6.0.1",
+    "@school-wise/lib-api-client": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

@@ -19,6 +19,7 @@ import {
 
 import type { AccessTokenPayload } from "./access-token-payload";
 import { PasswordService } from "./password.service";
+import { permissionsForRole } from "./permissions";
 import { TokenService } from "./token.service";
 
 /** Request metadata recorded on the session. Both may legitimately be absent. */
@@ -211,7 +212,7 @@ export class AuthService {
           schoolId: session.schoolId,
           membershipId: membership.id,
           roles: [membership.role],
-          permissions: [],
+          permissions: permissionsForRole(membership.role),
           sessionId: session.id,
         }),
         refreshToken: issued.token,
@@ -313,7 +314,7 @@ export class AuthService {
           schoolId: membership.schoolId,
           membershipId: membership.id,
           roles: [membership.role],
-          permissions: [],
+          permissions: permissionsForRole(membership.role),
           sessionId: session.id,
         }),
         refreshToken: issued.token,

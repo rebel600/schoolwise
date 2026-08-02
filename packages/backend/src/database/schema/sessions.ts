@@ -104,3 +104,42 @@ export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type NewRefreshToken = typeof refreshTokens.$inferInsert;
+
+/**
+ * Password reset tokens.
+ *
+ * Same discipline as refresh tokens: opaque random value, stored HASHED,
+ * single-use, short-lived. A database read must not yield a working reset
+ * link.
+ *
+ * TTL is deliberately short (1 hour). A reset link sits in an inbox, which
+ * is exactly where a compromised-account attacker looks.
+ */
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    /** SHA-256 of an opaque 256-bit value. Never the raw token. */
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+
+    /** Single use. A second presentation must fail. */
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("password_reset_tokens_hash_uq").on(t.tokenHash),
+    index("password_reset_tokens_user_idx").on(t.userId),
+    index("password_reset_tokens_expiry_idx").on(t.expiresAt),
+  ],
+);
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;

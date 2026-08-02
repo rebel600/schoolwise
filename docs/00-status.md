@@ -29,45 +29,47 @@ Update this file in the same pull request that changes implementation status. A 
 
 # Frontend
 
-| Package              | Status      | Notes                                                                                                                                                                      |
-| -------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `root-config`        | **Partial** | Single-SPA shell. Registers `app-auth`, allow-list route activation, import map in `index.html`. No layout, navigation, auth guard, error boundary, or workspace switcher. |
-| `app-auth`           | **Partial** | Renders a static card with a Sign In button. No form, validation, API call, or routing. `auth-store.ts` is a `localStorage` placeholder — see warning below.               |
-| `styleguide`         | **Partial** | One component (`Button`). Tailwind configured with CSS custom property tokens. No Radix primitives yet.                                                                    |
-| `app-lms`            | **Planned** |                                                                                                                                                                            |
-| `app-teacher`        | **Planned** |                                                                                                                                                                            |
-| `app-principal`      | **Planned** |                                                                                                                                                                            |
-| `app-administration` | **Planned** |                                                                                                                                                                            |
-| `app-monitoring`     | **Planned** |                                                                                                                                                                            |
-| `lib-api-client`     | **Planned** |                                                                                                                                                                            |
-| `lib-types`          | **Planned** |                                                                                                                                                                            |
-| `lib-utils`          | **Planned** |                                                                                                                                                                            |
-| `lib-hooks`          | **Planned** |                                                                                                                                                                            |
-| `lib-config`         | **Planned** |                                                                                                                                                                            |
+| Package              | Status      | Notes                                                                                                                                    |
+| -------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `root-config`        | **Partial** | Shell with session bootstrap and an auth route guard. Still no layout, navigation, error boundary, or workspace switcher.                |
+| `app-auth`           | **Built**   | Real login and forgot-password forms, React Hook Form + shared Zod schemas, wired to the API. The `localStorage` placeholder is deleted. |
+| `styleguide`         | **Partial** | `Button`, `Input`, `Label`, `Alert`, `cn()`. Tailwind tokens as CSS custom properties. No Radix primitives yet.                          |
+| `app-lms`            | **Planned** |                                                                                                                                          |
+| `app-teacher`        | **Planned** |                                                                                                                                          |
+| `app-principal`      | **Planned** |                                                                                                                                          |
+| `app-administration` | **Planned** |                                                                                                                                          |
+| `app-monitoring`     | **Planned** |                                                                                                                                          |
+| `lib-api-client`     | **Built**   | Framework-free session store, in-memory token, auto-refresh with concurrent-request dedup. A **runtime singleton**, not bundled per app. |
+| `lib-types`          | **Built**   | Zod schemas shared by both sides, so a contract change is a type error                                                                   |
+| `lib-utils`          | **Planned** |                                                                                                                                          |
+| `lib-hooks`          | **Planned** |                                                                                                                                          |
+| `lib-config`         | **Planned** |                                                                                                                                          |
 
-> **`app-auth/src/auth-store.ts` is a development placeholder and must not reach production.**
-> It writes a token to `localStorage`, which is readable by any script on the origin and is the exact pattern [ADR-0005](adr/0005-self-hosted-jwt-authentication.md) prohibits. The production design keeps the access token in memory and the refresh token in an `httpOnly` cookie. Delete this file when the real auth client lands.
+The `localStorage` placeholder is gone. The access token now lives in a module variable inside `lib-api-client`, and the refresh token in an `httpOnly` cookie — verified by an end-to-end test that asserts no JWT appears in either web storage.
 
 ---
 
 # Backend
 
-| Component               | Status      | Notes                                                                              |
-| ----------------------- | ----------- | ---------------------------------------------------------------------------------- |
-| NestJS application      | **Built**   | Boots, versioned `/api/v1`, Swagger at `/api/docs`                                 |
-| Config                  | **Built**   | Zod-validated env, fails fast at startup with actionable errors                    |
-| Drizzle + PostgreSQL    | **Built**   | `postgres-js`, `prepare: false` for tenant-scoped transactions                     |
-| Schema                  | **Partial** | `schools`, `users`, `school_memberships`, `students`, `sessions`, `refresh_tokens` |
-| Migrations              | **Built**   | 3 migrations, applied to PostgreSQL 16                                             |
-| **Tenant isolation**    | **Built**   | All three layers, **verified** — see below                                         |
-| **Auth module**         | **Built**   | Login, refresh with rotation + reuse detection, logout, `/auth/me`                 |
-| Password hashing        | **Built**   | Argon2id, OWASP parameters                                                         |
-| Guards                  | **Built**   | `JwtAuthGuard` + `RolesGuard`, GLOBAL with `@Public()` opt-out                     |
-| Global exception filter | **Built**   | Standard envelope; stacks logged, never returned                                   |
-| Zod validation pipe     | **Built**   | Validates and strips unknown keys                                                  |
-| Health endpoint         | **Built**   | `GET /api/v1/health`, checks the database                                          |
-| Seed script             | **Built**   | `db:seed` — creates TWO schools, so isolation bugs are visible                     |
-| Business modules        | **Planned** | Attendance, assignments, timetable, results, …                                     |
+| Component               | Status      | Notes                                                                                                       |
+| ----------------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| NestJS application      | **Built**   | Boots, versioned `/api/v1`, Swagger at `/api/docs`                                                          |
+| Config                  | **Built**   | Zod-validated env, fails fast at startup with actionable errors                                             |
+| Drizzle + PostgreSQL    | **Built**   | `postgres-js`, `prepare: false` for tenant-scoped transactions                                              |
+| Schema                  | **Partial** | `schools`, `users`, `school_memberships`, `students`, `sessions`, `refresh_tokens`, `password_reset_tokens` |
+| Migrations              | **Built**   | 4 migrations, applied to PostgreSQL 16                                                                      |
+| **Tenant isolation**    | **Built**   | All three layers, **verified** — see below                                                                  |
+| **Auth module**         | **Built**   | Login, refresh with rotation + reuse detection, logout, `/auth/me`                                          |
+| Password reset          | **Built**   | Hashed single-use tokens, 1 h TTL, revokes every session on success                                         |
+| Password hashing        | **Built**   | Argon2id, OWASP parameters                                                                                  |
+| Rate limiting           | **Built**   | Login 10/min, refresh 60/min, reset 5/15 min. In-memory — see caveat below.                                 |
+| Permissions             | **Built**   | Role → permission map, `PermissionsGuard`, embedded in the token                                            |
+| Guards                  | **Built**   | Throttler → JWT → Roles → Permissions, all GLOBAL with `@Public()` opt-out                                  |
+| Global exception filter | **Built**   | Standard envelope; stacks logged, never returned                                                            |
+| Zod validation pipe     | **Built**   | Validates and strips unknown keys                                                                           |
+| Health endpoint         | **Built**   | `GET /api/v1/health`, checks the database                                                                   |
+| Seed script             | **Built**   | `db:seed` — creates TWO schools, so isolation bugs are visible                                              |
+| Business modules        | **Planned** | Attendance, assignments, timetable, results, …                                                              |
 
 ## Tenant isolation — verified, not assumed
 
@@ -123,13 +125,38 @@ Also confirmed manually against **PostgreSQL 16** in Docker, connecting as the n
 >
 > Also corrected: tenant binding was originally a **middleware**, which cannot work — NestJS runs middleware _before_ guards, so `req.user` did not exist yet. It is now an interceptor.
 
+## End-to-end — verified in a real browser
+
+8 Playwright tests against the full stack: shell → auth micro frontend → API → PostgreSQL.
+
+| Check                                                      | Result |
+| ---------------------------------------------------------- | ------ |
+| Signed-out visitor redirected to `/login`                  | ✅     |
+| Malformed email caught client-side, no request sent        | ✅     |
+| Wrong password and unknown email give the **same** message | ✅     |
+| Valid credentials sign in and leave the login screen       | ✅     |
+| Refresh cookie is `httpOnly` + `SameSite=Strict`           | ✅     |
+| **No JWT in `localStorage` or `sessionStorage`**           | ✅     |
+| Reload restores the session from the cookie alone          | ✅     |
+| Forgot-password never reveals whether an account exists    | ✅     |
+
+Run with `bun run test:e2e`. Deliberately outside `turbo test` — it needs Docker, the API, and four dev servers, whereas Vitest suites must stay runnable anywhere.
+
+> **Three bugs found only by running it in a browser.**
+>
+> **1. Duplicate React.** `lib-api-client` used zustand, which pulls in React. As a shared runtime singleton it became a _second_ React beside each app's own, and every hook died with `Invalid hook call … Cannot read properties of null`. The store is now framework-free plain state; each application binds it with its own `useSyncExternalStore`. The thing that must be shared is state, not a React binding.
+>
+> **2. Named throttlers apply globally.** Defining `auth` and `reset` buckets alongside `default` does **not** scope them to those routes — NestJS enforces every named throttler on every route, so the strictest silently became the API-wide limit and threw 429 across the board. There is now one bucket, overridden per handler.
+>
+> **3. Dev-server module identity.** Vite resolves a bare workspace specifier to `/@fs/...`, ignoring the import map, so each dev server served its own copy of the shared packages from a different origin. Fixed by one `vite.shared-modules.ts` used by every config.
+
 ## Not yet done on the backend
 
-- **No rate limiting** on login, refresh, or password reset. ADR-0005 requires it before production.
-- **No password reset flow.** MFA and SSO remain deferred by ADR-0005.
-- **Permissions are empty.** `PermissionsGuard` is unwritten; tokens carry `permissions: []` and only role checks are enforced.
+- **No email delivery.** The reset token is logged in development and never returned in a response; a mail service is required before this ships.
+- **MFA and SSO** remain deferred by [ADR-0005](adr/0005-self-hosted-jwt-authentication.md).
 - **No concrete repository yet.** `TenantRepository` is written, typed, and tested but has no subclass; `students` has no service or controller.
 - **`grantsSql()` in `src/database/rls.ts` is unused** — role creation is currently manual (`docker-compose.yml`) and in the test harness. Wire it into a migration when provisioning is automated.
+- **Rate limiting is in-memory.** Fine for one instance; multiple replicas need the Redis storage adapter or each replica enforces its own budget.
 
 ---
 
@@ -184,13 +211,11 @@ The first attempt at this **passed when it should have failed**: without `eslint
 Ordered by dependency, not by visible progress:
 
 1. Enable branch protection on `main` and confirm CI actually runs on a PR
-2. Rate limiting on login, refresh, and password reset
-3. Password reset flow
-4. `PermissionsGuard` and a real permission model
-5. First concrete `TenantRepository` subclass plus a students module, as the reference implementation
-6. `lib-api-client` and `lib-types`
-7. Real auth application, replacing the `localStorage` placeholder store
-8. Shell — layout, navigation, auth guard, workspace switcher, error boundary
+2. Email delivery, so password reset works outside development
+3. First concrete `TenantRepository` subclass plus a students module, as the reference implementation
+4. Shell — layout, navigation, workspace switcher, error boundary
+5. The remaining micro frontends: LMS, teacher, principal, administration, monitoring
+6. Redis-backed rate limiting once more than one replica runs
 
 Steps 2 and 3 are the gaps [ADR-0005](adr/0005-self-hosted-jwt-authentication.md) names as prerequisites before this auth module is production-ready. Without rate limiting, the login endpoint is an open brute-force target regardless of how good the hashing is.
 

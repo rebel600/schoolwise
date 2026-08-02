@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Req,
   Res,
@@ -11,13 +12,27 @@ import {
   UsePipes,
 } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import type { Response } from "express";
 
+import {
+  LOGIN_THROTTLE,
+  PASSWORD_RESET_THROTTLE,
+  REFRESH_THROTTLE,
+} from "../common/throttler.config";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import type { AuthenticatedRequest } from "../tenancy/authenticated-request";
 
-import { loginSchema, type LoginRequest } from "./auth.schemas";
+import {
+  confirmPasswordResetSchema,
+  loginSchema,
+  requestPasswordResetSchema,
+  type ConfirmPasswordReset,
+  type LoginRequest,
+  type RequestPasswordReset,
+} from "./auth.schemas";
 import { AuthService, type AuthResult } from "./auth.service";
+import { PasswordResetService } from "./password-reset.service";
 import { Public } from "./public.decorator";
 
 /** Name of the httpOnly cookie carrying the refresh token. */
@@ -26,9 +41,15 @@ const REFRESH_COOKIE = "schoolwise_refresh";
 @ApiTags("auth")
 @Controller({ path: "auth", version: "1" })
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  private readonly logger = new Logger(AuthController.name);
+
+  constructor(
+    private readonly auth: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
+  @Throttle(LOGIN_THROTTLE)
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @UsePipes(new ZodValidationPipe(loginSchema))
@@ -49,6 +70,13 @@ export class AuthController {
   }
 
   @Public()
+  /*
+   * Looser than login: the shell calls this once on EVERY page load, so a
+   * user who reloads a few times must not be locked out. Brute force is not
+   * the threat here — the token is a 256-bit opaque value, and reuse
+   * detection already revokes the session on a second use.
+   */
+  @Throttle(REFRESH_THROTTLE)
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -88,6 +116,47 @@ export class AuthController {
 
     /* Cleared unconditionally, so a stale cookie never lingers. */
     res.clearCookie(REFRESH_COOKIE, this.cookieOptions());
+  }
+
+  @Public()
+  @Throttle(PASSWORD_RESET_THROTTLE)
+  @Post("password-reset")
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UsePipes(new ZodValidationPipe(requestPasswordResetSchema))
+  @ApiOperation({ summary: "Request a password reset link" })
+  async requestPasswordReset(@Body() body: RequestPasswordReset) {
+    const issued = await this.passwordReset.request(body.email);
+
+    /*
+     * The token is handed to the mail service, NEVER returned. Outside
+     * production it is logged so the flow is testable before mail exists.
+     */
+    if (issued && process.env["NODE_ENV"] !== "production") {
+      this.logger.warn(`DEV ONLY — password reset token: ${issued.token}`);
+    }
+
+    /* Identical response whether or not the address exists. */
+    return {
+      success: true,
+      message: "If that address has an account, a reset link has been sent.",
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Public()
+  @Throttle(PASSWORD_RESET_THROTTLE)
+  @Post("password-reset/confirm")
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ZodValidationPipe(confirmPasswordResetSchema))
+  @ApiOperation({ summary: "Complete a password reset" })
+  async confirmPasswordReset(@Body() body: ConfirmPasswordReset) {
+    await this.passwordReset.confirm(body.token, body.password);
+
+    return {
+      success: true,
+      message: "Password updated. Please sign in again.",
+      timestamp: new Date().toISOString(),
+    };
   }
 
   @Get("me")

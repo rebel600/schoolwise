@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    /*
+     * No `vite/client` — this package is framework-agnostic and has no Vite
+     * dependency. Overriding the base `types` keeps it that way.
+     */
+    "types": []
+  },
+  "include": ["src"]
+}

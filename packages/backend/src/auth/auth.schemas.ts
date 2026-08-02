@@ -18,3 +18,20 @@ export const loginSchema = z.object({
 });
 
 export type LoginRequest = z.infer<typeof loginSchema>;
+
+export const requestPasswordResetSchema = z.object({
+  email: z.string().email().max(320),
+});
+
+export const confirmPasswordResetSchema = z.object({
+  token: z.string().min(1).max(256),
+  /*
+   * 12 characters minimum, no composition rules. NIST 800-63B: length
+   * beats forced symbol classes, which mostly produce Password1! and a
+   * sticky note.
+   */
+  password: z.string().min(12).max(256),
+});
+
+export type RequestPasswordReset = z.infer<typeof requestPasswordResetSchema>;
+export type ConfirmPasswordReset = z.infer<typeof confirmPasswordResetSchema>;
