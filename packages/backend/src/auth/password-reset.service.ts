@@ -4,10 +4,14 @@ import {
   Injectable,
   Logger,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { and, eq, isNull } from "drizzle-orm";
 
+import type { Env } from "../config/env";
 import { DATABASE, type Database } from "../database/database.types";
 import { passwordResetTokens, sessions, users } from "../database/schema";
+import { MailService } from "../mail/mail.service";
+import { passwordResetEmail } from "../mail/templates/password-reset";
 
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
@@ -23,6 +27,8 @@ export class PasswordResetService {
     @Inject(DATABASE) private readonly db: Database,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
+    private readonly mail: MailService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   /**
@@ -69,11 +75,27 @@ export class PasswordResetService {
       expiresAt: new Date(Date.now() + RESET_TTL_MS),
     });
 
+    const resetUrl = new URL(
+      "/reset-password",
+      this.config.get("APP_BASE_URL", { infer: true }),
+    );
+    resetUrl.searchParams.set("token", token);
+
     /*
-     * Returned to the CALLER, not to the HTTP client — the controller hands
-     * it to the mail service. Until that exists, it is logged in
-     * development only and never included in a response body.
+     * Sending happens HERE, not in the controller, so the raw token never
+     * travels back through the HTTP layer where it could be logged or
+     * accidentally serialised into a response.
      */
+    await this.mail.send(
+      passwordResetEmail({
+        to: user.email,
+        firstName: user.firstName,
+        resetUrl: resetUrl.toString(),
+        expiresInMinutes: RESET_TTL_MS / 60_000,
+      }),
+    );
+
+    /* Returned for tests only. Never included in an HTTP response. */
     return { token };
   }
 

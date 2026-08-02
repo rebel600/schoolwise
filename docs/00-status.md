@@ -152,7 +152,7 @@ Run with `bun run test:e2e`. Deliberately outside `turbo test` — it needs Dock
 
 ## Not yet done on the backend
 
-- **No email delivery.** The reset token is logged in development and never returned in a response; a mail service is required before this ships.
+- **No queue for email.** Send failures are logged and swallowed on the reset path, because a 500 there would reveal that the address IS registered. Delivery guarantees need a background queue — see docs/03-backend.md.
 - **MFA and SSO** remain deferred by [ADR-0005](adr/0005-self-hosted-jwt-authentication.md).
 - **No concrete repository yet.** `TenantRepository` is written, typed, and tested but has no subclass; `students` has no service or controller.
 - **`grantsSql()` in `src/database/rls.ts` is unused** — role creation is currently manual (`docker-compose.yml`) and in the test harness. Wire it into a migration when provisioning is automated.
@@ -211,7 +211,7 @@ The first attempt at this **passed when it should have failed**: without `eslint
 Ordered by dependency, not by visible progress:
 
 1. Enable branch protection on `main` and confirm CI actually runs on a PR
-2. Email delivery, so password reset works outside development
+2. Point `SMTP_*` at a real provider — Mailtrap while testing, so nothing reaches a real inbox
 3. First concrete `TenantRepository` subclass plus a students module, as the reference implementation
 4. Shell — layout, navigation, workspace switcher, error boundary
 5. The remaining micro frontends: LMS, teacher, principal, administration, monitoring

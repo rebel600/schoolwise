@@ -16,6 +16,11 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [["list"]],
+  /*
+   * The dev mail fallback writes reset links here, which is how the reset
+   * tests obtain a real link — the same one a user would get by email.
+   */
+  globalSetup: undefined,
   use: {
     baseURL: "http://localhost:9000",
     trace: "retain-on-failure",

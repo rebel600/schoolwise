@@ -6,6 +6,7 @@ import { AuthModule } from "./auth/auth.module";
 import { validateEnv } from "./config/env";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
+import { MailModule } from "./mail/mail.module";
 import { TenantInterceptor } from "./tenancy/tenant.interceptor";
 import { TenancyModule } from "./tenancy/tenant.module";
 
@@ -19,6 +20,7 @@ import { TenancyModule } from "./tenancy/tenant.module";
     }),
     DatabaseModule,
     TenancyModule,
+    MailModule,
     AuthModule,
     HealthModule,
   ],

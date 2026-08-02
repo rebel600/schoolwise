@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import type { ConfigService } from "@nestjs/config";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -10,6 +11,7 @@ import {
   sessions,
   users,
 } from "../database/schema";
+import type { MailMessage } from "../mail/mail.service";
 import {
   createTestDatabase,
   type TestDatabase,
@@ -24,14 +26,30 @@ describe("PasswordResetService", () => {
   let service: PasswordResetService;
   let passwords: PasswordService;
   let schoolId: string;
+  /** Captures what WOULD have been emailed, so tests can assert on it. */
+  let sent: MailMessage[];
 
   beforeAll(async () => {
     harness = await createTestDatabase();
     passwords = new PasswordService();
+    sent = [];
+
+    const mail = {
+      send: async (message: MailMessage) => {
+        sent.push(message);
+      },
+    };
+
+    const config = {
+      get: () => "http://localhost:9000",
+    } as unknown as ConfigService;
+
     service = new PasswordResetService(
       harness.db,
       passwords,
       new TokenService(),
+      mail as never,
+      config as never,
     );
 
     const [school] = await harness.db
@@ -46,6 +64,7 @@ describe("PasswordResetService", () => {
   });
 
   beforeEach(async () => {
+    sent = [];
     await harness.db.delete(passwordResetTokens);
     await harness.db.delete(refreshTokens);
     await harness.db.delete(sessions);
@@ -116,6 +135,34 @@ describe("PasswordResetService", () => {
       await expect(
         service.confirm(second!.token, "BrandNewPassword1"),
       ).resolves.toBeUndefined();
+    });
+
+    it("emails a link containing the token", async () => {
+      await seedUser("known@example.com");
+      const issued = await service.request("known@example.com");
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.to).toBe("known@example.com");
+      expect(sent[0]!.subject).toMatch(/reset your schoolwise password/i);
+
+      /* The link must point at the FRONTEND, not the API. */
+      expect(sent[0]!.text).toContain(
+        "http://localhost:9000/reset-password?token=" + issued!.token,
+      );
+    });
+
+    it("sends both a plain-text and an HTML part", async () => {
+      await seedUser("known@example.com");
+      await service.request("known@example.com");
+
+      /* Gateways that strip HTML must still deliver a usable link. */
+      expect(sent[0]!.text).toContain("/reset-password?token=");
+      expect(sent[0]!.html).toContain("/reset-password?token=");
+    });
+
+    it("sends nothing at all for an unknown address", async () => {
+      await service.request("nobody@example.com");
+      expect(sent).toHaveLength(0);
     });
 
     it("issues nothing for a suspended account", async () => {

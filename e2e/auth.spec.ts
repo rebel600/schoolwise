@@ -154,3 +154,134 @@ test.describe("authentication", () => {
     );
   });
 });
+
+/**
+ * Password reset, end to end.
+ *
+ * The reset LINK is read from the API log, which is where the dev mail
+ * fallback writes it. That is deliberately the same path a user takes from
+ * their inbox — it exercises the real generated URL rather than a token
+ * fabricated by the test.
+ */
+test.describe("password reset", () => {
+  const API = "http://localhost:3000/api/v1";
+
+  async function requestResetLink(email: string): Promise<string> {
+    const response = await fetch(`${API}/auth/password-reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    expect(response.status).toBe(202);
+
+    /* Give the log write a moment to land. */
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    const { readFileSync } = await import("node:fs");
+    const log = readFileSync(process.env["API_LOG"]!, "utf8");
+    const matches = [
+      ...log.matchAll(/http:\/\/localhost:9000\/reset-password\?token=[\w-]+/g),
+    ];
+
+    const link = matches.at(-1)?.[0];
+    expect(link, "no reset link found in the API log").toBeTruthy();
+    return link!;
+  }
+
+  test("a reset link opens the form and changes the password", async ({
+    page,
+  }) => {
+    const email = "admin@oakwood-academy.test";
+    const newPassword = "ReplacedPassword77";
+
+    const link = await requestResetLink(email);
+    await page.goto(link);
+
+    await expect(
+      page.getByRole("heading", { name: /choose a new password/i }),
+    ).toBeVisible();
+
+    await page.getByLabel("New password", { exact: true }).fill(newPassword);
+    await page.getByLabel("Confirm new password").fill(newPassword);
+    await page.getByRole("button", { name: /update password/i }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /password updated/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    /* The new password works. */
+    const ok = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: newPassword }),
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  test("mismatched confirmation is caught before submitting", async ({
+    page,
+  }) => {
+    const link = await requestResetLink("admin@riverside-high.test");
+    await page.goto(link);
+
+    await page
+      .getByLabel("New password", { exact: true })
+      .fill("LongEnoughPassword1");
+    await page.getByLabel("Confirm new password").fill("SomethingElse123456");
+    await page.getByRole("button", { name: /update password/i }).click();
+
+    await expect(page.getByText(/passwords do not match/i)).toBeVisible();
+  });
+
+  test("a short password is rejected", async ({ page }) => {
+    const link = await requestResetLink("admin@riverside-high.test");
+    await page.goto(link);
+
+    await page.getByLabel("New password", { exact: true }).fill("short");
+    await page.getByLabel("Confirm new password").fill("short");
+    await page.getByRole("button", { name: /update password/i }).click();
+
+    await expect(page.getByText(/at least 12 characters/i)).toBeVisible();
+  });
+
+  test("a link with no token explains itself instead of showing a dead form", async ({
+    page,
+  }) => {
+    await page.goto("/reset-password");
+
+    await expect(page.getByRole("alert")).toHaveText(
+      /missing its reset token/i,
+    );
+    await expect(
+      page.getByRole("button", { name: /update password/i }),
+    ).toHaveCount(0);
+  });
+
+  test("a token cannot be used twice", async ({ page }) => {
+    const email = "admin@riverside-high.test";
+    const link = await requestResetLink(email);
+
+    await page.goto(link);
+    await page
+      .getByLabel("New password", { exact: true })
+      .fill("FirstUsePassword1");
+    await page.getByLabel("Confirm new password").fill("FirstUsePassword1");
+    await page.getByRole("button", { name: /update password/i }).click();
+    await expect(
+      page.getByRole("heading", { name: /password updated/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    /* Same link again — single-use means this must fail. */
+    await page.goto(link);
+    await page
+      .getByLabel("New password", { exact: true })
+      .fill("SecondUsePassword1");
+    await page.getByLabel("Confirm new password").fill("SecondUsePassword1");
+    await page.getByRole("button", { name: /update password/i }).click();
+
+    await expect(page.getByRole("alert")).toHaveText(
+      /invalid or has expired/i,
+      { timeout: 15_000 },
+    );
+  });
+});
